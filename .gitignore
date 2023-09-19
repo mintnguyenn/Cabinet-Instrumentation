@@ -2,11 +2,10 @@
 /.settings
 /.vs
 /.vscode
+/Debug
 
 # Ignore a specific file
 .cproject
 .project
 .mxproject
 ```
-
-
