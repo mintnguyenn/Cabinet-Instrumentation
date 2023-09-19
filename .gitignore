@@ -1,0 +1,12 @@
+# Ignore a specific directory
+/.settings
+/.vs
+/.vscode
+/.debug
+
+# Ignore a specific file
+.cproject
+.project
+.mxproject
+```
+
