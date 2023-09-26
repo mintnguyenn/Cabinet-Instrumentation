@@ -63,8 +63,6 @@ void Error_Handler(void);
 #define uSD_Detect_GPIO_Port GPIOC
 #define LD2_Pin GPIO_PIN_4
 #define LD2_GPIO_Port GPIOH
-#define DHTB12_Pin GPIO_PIN_12
-#define DHTB12_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

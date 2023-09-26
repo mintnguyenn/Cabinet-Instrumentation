@@ -65,7 +65,7 @@ main-build: EnviroSense.elf secondary-outputs
 
 # Tool invocations
 EnviroSense.elf EnviroSense.map: $(OBJS) $(USER_OBJS) D:\OneDrive\ -\ UTS\Insect\ arena\EnviroSense\STM32L4R9AIIX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "EnviroSense.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"D:\OneDrive - UTS\Insect arena\EnviroSense\STM32L4R9AIIX_FLASH.ld" --specs=nosys.specs -Wl,-Map="EnviroSense.map" -Wl,--gc-sections -static -u_printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+	arm-none-eabi-gcc -o "EnviroSense.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"D:\OneDrive - UTS\Insect arena\EnviroSense\STM32L4R9AIIX_FLASH.ld" --specs=nosys.specs -Wl,-Map="EnviroSense.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

@@ -176,60 +176,60 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  /* Get temperature/humidity data and log to TXT file */
-	  if (HAL_GetTick() > dht_count*DHT22_FREQ){
-		  dht_count++;
-		  Dht22(&temperature, &humidity); /* Read temperature and humidity from DHT22 */
+      /* Get temperature/humidity data and log to TXT file */
+      if (HAL_GetTick() > dht_count*DHT22_FREQ){
+	  dht_count++;
+	  Dht22(&temperature, &humidity); /* Read temperature and humidity from DHT22 */
 
-		  /* Create string to write to file */
-		  millis = HAL_GetTick();
-		  sprintf(temp_buffer_sd, "%02lu:%02lu, %.1f, %.1f\r\n", (millis/3600000)%24, (millis/60000)%60, temperature, humidity); /* Data format "HH:MM, Temperature, Humidity" */
-		  sprintf(temp_buffer_lcd, "%i %.1f %.1f", div(millis,1000).quot, temperature, humidity); /* Data format "Second, Temperature, Humidity" */
+	  /* Create string to write to file */
+	  millis = HAL_GetTick();
+	  sprintf(temp_buffer_sd, "%02lu:%02lu, %.1f, %.1f\r\n", (millis/3600000)%24, (millis/60000)%60, temperature, humidity); /* Data format "HH:MM, Temperature, Humidity" */
+	  sprintf(temp_buffer_lcd, "%i %.1f %.1f", div(millis,1000).quot, temperature, humidity); /* Data format "Second, Temperature, Humidity" */
 
-		  /* Logging to TXT file and debugging */
-		  /* Open TXT file */
-		  fresult = f_open(&thermohygrometer, "STM32.TXT", FA_OPEN_APPEND | FA_WRITE);
+	  /* Logging to TXT file and debugging */
+	  /* Open TXT file */
+	  fresult = f_open(&thermohygrometer, "STM32.TXT", FA_OPEN_APPEND | FA_WRITE);
+	  if (fresult != FR_OK){
+//	      sprintf(error_buffer, "ERROR! File could not be opened! Fresult is %i \r\n",fresult);
+//	      printf(error_buffer);
+	  }
+	  else {
+//	      printf("File is opened successfully!\r\n");
+	      LcdSendStringAtPos(0,9,"OPENED ");
+
+	      /* Log data to TXT file */
+	      fresult = f_write(&thermohygrometer, temp_buffer_sd, strlen(temp_buffer_sd), (void *)&byteswritten);
+	      if (fresult != FR_OK){
+//		  sprintf(error_buffer, "ERROR! File could not be written! Fresult is %i \r\n",fresult);
+//		  printf(error_buffer);
+	      }
+	      else {
+//		  printf("File is written successfully!\r\n");
+//		  printf(temp_buffer);
+		  LcdSendStringAtPos(0,9,"WRITTEN");
+		  LcdSendStringAtPos(1,0,temp_buffer_lcd);
+
+		  /* Close TXT file */
+		  fresult = f_close(&thermohygrometer);
 		  if (fresult != FR_OK){
-//			  sprintf(error_buffer, "ERROR! File could not be opened! Fresult is %i \r\n",fresult);
-//			  printf(error_buffer);
+//		      sprintf(error_buffer, "ERROR! File could not be closed! Fresult is %i \r\n",fresult);
+//		      printf(error_buffer);
 		  }
 		  else {
-//			  printf("File is opened successfully!\r\n");
-			  LcdSendStringAtPos(0,9,"OPENED ");
-
-			  /* Log data to TXT file */
-			  fresult = f_write(&thermohygrometer, temp_buffer_sd, strlen(temp_buffer_sd), (void *)&byteswritten);
-			  if (fresult != FR_OK){
-//				  sprintf(error_buffer, "ERROR! File could not be written! Fresult is %i \r\n",fresult);
-//				  printf(error_buffer);
-			  }
-			  else {
-//				  printf("File is written successfully!\r\n");
-//				  printf(temp_buffer);
-				  LcdSendStringAtPos(0,9,"WRITTEN");
-				  LcdSendStringAtPos(1,0,temp_buffer_lcd);
-
-				  /* Close TXT file */
-				  fresult = f_close(&thermohygrometer);
-				  if (fresult != FR_OK){
-//					  sprintf(error_buffer, "ERROR! File could not be closed! Fresult is %i \r\n",fresult);
-//					  printf(error_buffer);
-				  }
-				  else {
-//					  printf("File is closed successfully!\r\n");
-//					  printf("\r\n");
-					  LcdSendStringAtPos(0,9,"CLOSED ");
-				  }
-			  }
+//		      printf("File is closed successfully!\r\n");
+//		      printf("\r\n");
+		      LcdSendStringAtPos(0,9,"CLOSED ");
 		  }
+	      }
 	  }
+      }
 
-	  /* Display timer on LCD */
-	  if (HAL_GetTick() - millis > 1000){
-		  millis = HAL_GetTick();
-		  sprintf(timer_buffer, "%02lu:%02lu:%02lu", millis/3600000, (millis/60000)%60, (millis/1000)%60); /* Format "HH:MM:SS" */
-		  LcdSendStringAtPos(0, 0, timer_buffer);
-	  }
+      /* Display timer on LCD */
+      if (HAL_GetTick() - millis > 1000){
+	  millis = HAL_GetTick();
+	  sprintf(timer_buffer, "%02lu:%02lu:%02lu", millis/3600000, (millis/60000)%60, (millis/1000)%60); /* Format "HH:MM:SS" */
+	  LcdSendStringAtPos(0, 0, timer_buffer);
+      }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -527,16 +527,12 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOG_CLK_ENABLE();
   HAL_PWREx_EnableVddIO2();
   __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(DHT_GPIO_Port, DHT_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(DHTB12_GPIO_Port, DHTB12_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin : DHT_Pin */
   GPIO_InitStruct.Pin = DHT_Pin;
@@ -557,13 +553,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : DHTB12_Pin */
-  GPIO_InitStruct.Pin = DHTB12_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(DHTB12_GPIO_Port, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
