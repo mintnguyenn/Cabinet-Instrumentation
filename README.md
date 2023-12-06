@@ -1,6 +1,6 @@
-# Insect Arena Instrumentation
+# Cabinet Instrumentation
 
-This repository is designed to facilitate the development of a termite monitoring system that utilises temperature, humidity, moisture, and acceleration/vibration sensors to collect real-time data on termite actions and movements, allowing for in-depth behavioural and mobility analysis. The repository is written in Embedded C language and implemented using STM32 microcontroller, providing a robust foundation for data acquisition and analysis.
+This repository is designed to facilitate the development of a termite monitoring system that utilises temperature, humidity and acceleration/vibration sensors to collect real-time data on termite actions and movements, allowing for in-depth behavioural and mobility analysis. The repository is written in Embedded C language and implemented using STM32 microcontroller, providing a robust foundation for data acquisition and analysis.
 
 ## Hardware
 
