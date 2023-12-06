@@ -38,34 +38,34 @@ $(wildcard ../makefile.init) \
 $(wildcard ../makefile.targets) \
 
 
-BUILD_ARTIFACT_NAME := EnviroSense
+BUILD_ARTIFACT_NAME := Cabinet-Instrumentation
 BUILD_ARTIFACT_EXTENSION := elf
 BUILD_ARTIFACT_PREFIX :=
 BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ARTIFACT_EXTENSION),.$(BUILD_ARTIFACT_EXTENSION),)
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXECUTABLES += \
-EnviroSense.elf \
+Cabinet-Instrumentation.elf \
 
 MAP_FILES += \
-EnviroSense.map \
+Cabinet-Instrumentation.map \
 
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
-EnviroSense.list \
+Cabinet-Instrumentation.list \
 
 
 # All Target
 all: main-build
 
 # Main-build Target
-main-build: EnviroSense.elf secondary-outputs
+main-build: Cabinet-Instrumentation.elf secondary-outputs
 
 # Tool invocations
-EnviroSense.elf EnviroSense.map: $(OBJS) $(USER_OBJS) D:\OneDrive\ -\ UTS\Insect\ arena\EnviroSense\STM32L4R9AIIX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "EnviroSense.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"D:\OneDrive - UTS\Insect arena\EnviroSense\STM32L4R9AIIX_FLASH.ld" --specs=nosys.specs -Wl,-Map="EnviroSense.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Cabinet-Instrumentation.elf Cabinet-Instrumentation.map: $(OBJS) $(USER_OBJS) E:\Embedded\ Projects\STM32\Cabinet-Instrumentation\STM32L4R9AIIX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "Cabinet-Instrumentation.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"E:\Embedded Projects\STM32\Cabinet-Instrumentation\STM32L4R9AIIX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Cabinet-Instrumentation.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -74,14 +74,14 @@ default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-EnviroSense.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "EnviroSense.list"
+Cabinet-Instrumentation.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "Cabinet-Instrumentation.list"
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) EnviroSense.elf EnviroSense.list EnviroSense.map default.size.stdout
+	-$(RM) Cabinet-Instrumentation.elf Cabinet-Instrumentation.list Cabinet-Instrumentation.map default.size.stdout
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)

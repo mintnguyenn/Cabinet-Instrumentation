@@ -937,6 +937,18 @@ int32_t lis3dh_acceleration_raw_get(stmdev_ctx_t *ctx, int16_t *val)
 
   return ret;
 }
+
+int32_t lis3dh_acceleration_raw_get_z(stmdev_ctx_t *ctx, int16_t *val)
+{
+  uint8_t buff[2];
+  int32_t ret;
+
+  ret = lis3dh_read_reg(ctx, LIS3DH_OUT_Z_L, buff, 2);
+  *val = (int16_t)buff[1];
+  *val = (*val * 256) + (int16_t)buff[0];
+
+  return ret;
+}
 /**
   * @}
   *

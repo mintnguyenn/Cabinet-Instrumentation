@@ -16,9 +16,7 @@ int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t 
 
 int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t len);
 
-stmdev_ctx_t accelerometerInit();
-
-//void lis3dhReadFIFO(stmdev_ctx_t dev_ctx, FIL fil);
+uint8_t Lis3dhInit(stmdev_ctx_t *dev_ctx, I2C_HandleTypeDef *i2c_handle);
 
 #endif /* INC_LIS3DH_H_ */
 

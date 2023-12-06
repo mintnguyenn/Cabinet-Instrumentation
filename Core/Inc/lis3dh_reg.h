@@ -850,6 +850,7 @@ int32_t lis3dh_xl_data_ready_get(stmdev_ctx_t *ctx, uint8_t *val);
 int32_t lis3dh_xl_data_ovr_get(stmdev_ctx_t *ctx, uint8_t *val);
 
 int32_t lis3dh_acceleration_raw_get(stmdev_ctx_t *ctx, int16_t *val);
+int32_t lis3dh_acceleration_raw_get_z(stmdev_ctx_t *ctx, int16_t *val);
 
 int32_t lis3dh_device_id_get(stmdev_ctx_t *ctx, uint8_t *buff);
 

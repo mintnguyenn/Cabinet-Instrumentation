@@ -23,22 +23,30 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
+#include <math.h>
 #include "i2c-lcd.h"
-//#include "lis3dh.h"
+#include "lis3dh.h"
 #include "dht.h"
+#include "tmp117.h"
 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef struct {
+  GPIO_TypeDef* dht_port;
+  uint16_t dht_pin;
+  float temperature;
+  float humidity;
+} dht_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define LCD_DEBUG
-#define UART_DEBUG
+#define DHT
+#define LIS3DH
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -47,44 +55,39 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-ADC_HandleTypeDef hadc1;
-
 I2C_HandleTypeDef hi2c3;
 
 SD_HandleTypeDef hsd1;
 
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim6;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-//uint32_t time;
-//volatile uint16_t adc_value;
+bool lcd=1;
 
 /**** Timer related ****/
-uint32_t millis=0;
+volatile uint32_t msec=0;
+uint32_t dht_millis=0, lis3dh_millis=0, timer_millis=0;
 char timer_buffer[9];
 
 /**** DHT22 related ****/
-#define DHT22_FREQ 60000 /* Get data every 1 minute */
-
-float temperature=0;
-float humidity=0;
-uint16_t dht_count=1;
-char temp_buffer_sd[20];
-char temp_buffer_lcd[20];
+#define DHT22_FREQ 20000 /* Get data every 1 minute */
+dht_t *dht = NULL;
+uint8_t dht_num;
+float tmp117=0;
 
 /**** SD Card related ****/
-FIL moisture, thermohygrometer; // File
+FIL accelerometer, thermohygrometer, dht_parameters; /* File */
 FRESULT fresult; /* FatFs function common result code */
-volatile uint32_t byteswritten; /* File write counts */
-uint8_t start_buffer[] = "Starting logging data to Thermohygrometer.txt...\r\n";
-char error_buffer[100];
+volatile uint32_t byteswritten;/* File write counts */
+char read_buffer[20], acc_buffer[20], temp_buffer_sd[150], temp_buffer_lcd[20], timer_lcd[7];
 
 /**** Accelerometer related ****/
-int16_t data_raw_acceleration[3];
-float acceleration_mg[3];
-char acc_buffer[50];
+stmdev_ctx_t dev_ctx;
+int16_t data_raw_acceleration;
+float acceleration_mg;
 
 /* USER CODE END PV */
 
@@ -93,9 +96,9 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_SDMMC1_SD_Init(void);
-static void MX_ADC1_Init(void);
 static void MX_I2C3_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
 
@@ -103,13 +106,24 @@ static void MX_TIM6_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-void MicroDelay (uint16_t time)
-{
-  __HAL_TIM_SET_COUNTER(&htim6, 0);
-  while ((__HAL_TIM_GET_COUNTER(&htim6))<time);
+void MicroDelay (uint16_t time){
+	__HAL_TIM_SET_COUNTER(&htim6, 0);
+	while ((__HAL_TIM_GET_COUNTER(&htim6))<time);
 }
 
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+  if (htim == &htim2){
+    msec++;
+  }
+}
+
+GPIO_TypeDef* GetGpioFromString(const char* gpio_string){
+	if (strcmp(gpio_string,"GPIOA")==0) return GPIOA;
+	else if (strcmp(gpio_string,"GPIOB")==0) return GPIOB;
+	else if (strcmp(gpio_string,"GPIOC")==0) return GPIOC;
+	else if (strcmp(gpio_string,"GPIOI")==0) return GPIOI;
+	else {printf("Detect nothing\r\n"); return NULL;}
+}
 /* USER CODE END 0 */
 
 /**
@@ -143,97 +157,165 @@ int main(void)
   MX_USART2_UART_Init();
   MX_SDMMC1_SD_Init();
   MX_FATFS_Init();
-  MX_ADC1_Init();
   MX_I2C3_Init();
   MX_TIM6_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
   HAL_TIM_Base_Start(&htim6);
 
   printf("\r\n");
 
+  /* Initialise I2C hardwares */
+  if(lcd) LcdInit();
+//  Lis3dhInit(&dev_ctx, &hi2c3);
+//  Tmp117_Init(hi2c3);
+
   /* Initialise logging file */
   if(f_mount(&SDFatFS, (TCHAR const*)SDPath, 1) != FR_OK) /* Mount uSD card */
-	  printf("ERROR!!! in mounting SD CARD...\r\n");
-  else{
-	  printf("SD CARD mounted successfully\r\n");
+    printf("ERROR in mounting uSD CARD...\r\n");
+  else {
+  	printf("uSD CARD mounted SUCCESSFULLY\r\n");
 
-	  if(f_open(&thermohygrometer, "STM32.TXT", FA_OPEN_APPEND | FA_WRITE) != FR_OK) /* Open TXT file */
-		  printf("Can't create file\r\n");
-	  else {
-		  fresult = f_write(&thermohygrometer, start_buffer, strlen((char *)start_buffer), (void *)&byteswritten); /* Write to TXT file */
-		  printf("Thermohygrometer.txt created and the data is written \r\n");
+  	/* Read parameters from DHT_PARA.TXT file, initialise DHTs */
+  	if(f_open(&dht_parameters, "DHT_PARA.TXT", FA_READ) != FR_OK)	printf("Can't open DHT_PARA.TXT\r\n");
+  	else {
+  		printf("DHT_PARA.TXT can be opened\r\n");
+  		/* Read number of DHTs (first line of TXT file) and re-allocated the array */
+  		if (f_gets(read_buffer, sizeof(read_buffer), &dht_parameters) != NULL){
+  			dht_num = atoi(strchr(read_buffer, ':')+1);
+  			dht = malloc(dht_num * sizeof(dht_t));
+  		}
+  		/* Read DHTs GPIO Port and GPIO Pin (the remaining lines) */
+  		uint8_t dht_count=0;
+  		for (uint8_t i=0; i<dht_num; i++){
+  			if(f_gets(read_buffer, sizeof(read_buffer), &dht_parameters) != NULL){
+  				dht_count++;
+  				char gpio_port[6];
+  				strncpy(gpio_port, strchr(read_buffer, ',')+1, 5); /* Get string "GPIOX" from read buffer */
+  				gpio_port[5]= '\0'; /* NULL Terminator */
 
-		  f_close(&thermohygrometer); /* Close TXT file */
-	  }
+  				dht[i].dht_port = GetGpioFromString(gpio_port);
+  				dht[i].dht_pin = pow(2,atoi(strchr(strchr(read_buffer, ',')+1, ',')+1)); /* Refer to #define GPIO_PIN_x (DEC)2^x */
+  				printf("%i %s%i | ",i+1,gpio_port,(uint8_t)log2(dht[i].dht_pin));
+  			}
+  		}
+			printf("\r\nNumber of DHTs initialised from TXT file: %i\r\n",dht_num);
+  		printf("Number of DHTs can be read from TXT file: %i\r\n",dht_count);
+  		if (dht_count < dht_num) dht_num = dht_count;
+  		f_close(&dht_parameters); /* Close TXT file */
+  	}
+  	/* Initialise TEMP_LOG.TXT file */
+  	if(f_open(&thermohygrometer, "TEMP_LOG.TXT", FA_OPEN_APPEND | FA_WRITE) != FR_OK)	printf("Can't create/open TEMP.TXT\r\n");
+  	else {
+  		printf("TEMP_LOG.TXT can be created\r\n");
+  		if (f_write(&thermohygrometer, "Starting logging data to TEMP_LOG.TXT\r\n", 42, (void *)&byteswritten) != FR_OK) printf("Write error\r\n");
+  		else{
+  			printf("TEMP_LOG.TXT created and data is written\r\n");
+  			f_close(&thermohygrometer); /* Close TXT file */
+  		}
+  	}
+  	/* Initialise ACC_LOG.TXT file */
+  	if(f_open(&accelerometer, "ACC_LOG.TXT", FA_OPEN_APPEND | FA_WRITE) != FR_OK) printf("Can't create/open ACC_LOG.TXT\r\n");
+  	else {
+  		printf("ACC_LOG.TXT can be created\r\n");
+  		if (f_write(&accelerometer, "Starting logging data to ACC_LOG.TXT...\r\n", 41, (void *)&byteswritten) != FR_OK) printf("Write error\r\n");
+  		else{
+  			printf("ACC_LOG.TXT created and data is written\r\n");
+	  		f_close(&accelerometer); /* Close TXT file */
+  		}
+  	}
   }
-  
-  LcdInit();
+  /* Start Timer2 */
+  HAL_TIM_Base_Start_IT(&htim2);
 
+  printf("\r\n");
+  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET); /* Turn LD2 on to confirm all components are initialised succesfully */
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-      /* Get temperature/humidity data and log to TXT file */
-      if (HAL_GetTick() > dht_count*DHT22_FREQ){
-	  dht_count++;
-	  Dht22(&temperature, &humidity); /* Read temperature and humidity from DHT22 */
+#if defined(LIS3DHH)
+  	if(HAL_GetTick() - lis3dh_millis >= 10000){
+  		lis3dh_millis = HAL_GetTick();
 
-	  /* Create string to write to file */
-	  millis = HAL_GetTick();
-	  sprintf(temp_buffer_sd, "%02lu:%02lu, %.1f, %.1f\r\n", (millis/3600000)%24, (millis/60000)%60, temperature, humidity); /* Data format "HH:MM, Temperature, Humidity" */
-	  sprintf(temp_buffer_lcd, "%i %.1f %.1f", div(millis,1000).quot, temperature, humidity); /* Data format "Second, Temperature, Humidity" */
+//  		f_open(&accelerometer, "ACC_LOG.TXT", FA_OPEN_APPEND | FA_WRITE);
+  		while(HAL_GetTick() - lis3dh_millis <= 5000){
+  			lis3dh_acceleration_raw_get_z(&dev_ctx, &data_raw_acceleration);
+  			acceleration_mg = (lis3dh_from_fs4_hr_to_mg(data_raw_acceleration));//-(-48))*1.4359 + (-441.6);
+  			sprintf(acc_buffer, "%li, %.2f\t\r\n", HAL_GetTick(), acceleration_mg);
+//  			f_write(&accelerometer, acc_buffer, strlen((char *)acc_buffer), (void *)&byteswritten); /* Write to TXT file */
+  			printf(acc_buffer);
+  		}
+//  		if (f_close(&accelerometer) == FR_OK) printf("Write and close successfully\r\n"); /* Close TXT file */
+  	}
+#endif
 
-	  /* Logging to TXT file and debugging */
-	  /* Open TXT file */
-	  fresult = f_open(&thermohygrometer, "STM32.TXT", FA_OPEN_APPEND | FA_WRITE);
-	  if (fresult != FR_OK){
-//	      sprintf(error_buffer, "ERROR! File could not be opened! Fresult is %i \r\n",fresult);
-//	      printf(error_buffer);
-	  }
-	  else {
-//	      printf("File is opened successfully!\r\n");
-	      LcdSendStringAtPos(0,9,"OPENED ");
+#if defined(DHT)
+  	/* Get temperature/humidity data and log to TXT file */
+  	if (HAL_GetTick() - dht_millis >= 5000){
+  		dht_millis = HAL_GetTick();
 
-	      /* Log data to TXT file */
-	      fresult = f_write(&thermohygrometer, temp_buffer_sd, strlen(temp_buffer_sd), (void *)&byteswritten);
-	      if (fresult != FR_OK){
-//		  sprintf(error_buffer, "ERROR! File could not be written! Fresult is %i \r\n",fresult);
-//		  printf(error_buffer);
-	      }
-	      else {
-//		  printf("File is written successfully!\r\n");
-//		  printf(temp_buffer);
-		  LcdSendStringAtPos(0,9,"WRITTEN");
-		  LcdSendStringAtPos(1,0,temp_buffer_lcd);
+  		/* Read temperature and humidity from DHTs */
+  		for (uint8_t i=0; i<dht_num; i++){
+  			Dht22(dht[i].dht_port, dht[i].dht_pin, &dht[i].temperature, &dht[i].humidity);
+  		}
+//  		tmp117 = TMP117_get_Temperature(hi2c3);
 
-		  /* Close TXT file */
-		  fresult = f_close(&thermohygrometer);
-		  if (fresult != FR_OK){
-//		      sprintf(error_buffer, "ERROR! File could not be closed! Fresult is %i \r\n",fresult);
-//		      printf(error_buffer);
-		  }
-		  else {
-//		      printf("File is closed successfully!\r\n");
-//		      printf("\r\n");
-		      LcdSendStringAtPos(0,9,"CLOSED ");
-		  }
-	      }
-	  }
+  		/* Create string to write to file */
+  		uint8_t buffer_offset=0, buffer_offset_lcd=0;
+  		buffer_offset += sprintf(temp_buffer_sd + buffer_offset, "%li", HAL_GetTick());
+  		for (uint8_t i=0; i<dht_num; i++){
+  			buffer_offset += sprintf(temp_buffer_sd + buffer_offset, ", %.2f,%.2f", dht[i].temperature, dht[i].humidity);
+  			buffer_offset_lcd += sprintf(temp_buffer_lcd+buffer_offset_lcd, "%.1f  ",dht[i].temperature);
       }
+//  		buffer_offset += sprintf(temp_buffer_sd + buffer_offset, ", %.2f", tmp117);
+  		sprintf(temp_buffer_sd + buffer_offset, "\r\n");
+  		sprintf(timer_lcd, "%li",(dht_millis/1000));
 
-      /* Display timer on LCD */
-      if (HAL_GetTick() - millis > 1000){
-	  millis = HAL_GetTick();
-	  sprintf(timer_buffer, "%02lu:%02lu:%02lu", millis/3600000, (millis/60000)%60, (millis/1000)%60); /* Format "HH:MM:SS" */
-	  LcdSendStringAtPos(0, 0, timer_buffer);
-      }
+  		/* Logging to TXT file and debugging */
+  		fresult = f_open(&thermohygrometer, "TEMP_LOG.TXT", FA_OPEN_APPEND | FA_WRITE); /* Open TXT file */
+  		if (fresult != FR_OK){
+  			printf("ERROR! File could not be opened! Fresuslt is %i\r\n",fresult);
+//  			if(lcd) LcdSendStringAtPos(0, 15, "E");
+  		}
+  		else {
+  			// printf("File is opened successfully!\r\n");
+//  			if(lcd) LcdSendStringAtPos(0,15,"O");
+  			fresult = f_write(&thermohygrometer, temp_buffer_sd, strlen(temp_buffer_sd), (void *)&byteswritten); /* Write data to TXT file */
+  			if (fresult != FR_OK) printf("ERROR! File could not be written! Fresult is %i\r\n",fresult);
+  			else {
+  				printf("%s", temp_buffer_sd);
+  				if(lcd) {
+  					// LcdSendStringAtPos(0,15,"W")
+  					LcdSendStringAtPos(1, 0, temp_buffer_lcd);
+  					LcdSendStringAtPos(0, 10, timer_lcd);
+  				}
+  				fresult = f_close(&thermohygrometer); /* Close TXT file */
+  				if (fresult != FR_OK) printf("ERROR! File could not be closed! Fresult is %i\r\n",fresult);
+  				else {
+  					// printf("File is closed successfully!\r\n");
+//  					if(lcd) LcdSendStringAtPos(0,15,"C");
+  				}
+  			}
+  		}
+  	}
+
+  	/* Display timer on LCD */
+  	if (HAL_GetTick() - timer_millis >= 1000){
+  		timer_millis = HAL_GetTick();
+  		sprintf(timer_buffer, "%02lu:%02lu:%02lu", timer_millis/3600000, (timer_millis/60000)%60, (timer_millis/1000)%60); /* Format "HH:MM:SS" */
+  		LcdSendStringAtPos(0, 0, timer_buffer);
+  	}
+#endif
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
+  f_close(&accelerometer); /* Close TXT file */
+  printf("Closed\r\n");
   /* USER CODE END 3 */
 }
 
@@ -256,14 +338,13 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_MSI;
-  RCC_OscInitStruct.MSIState = RCC_MSI_ON;
-  RCC_OscInitStruct.MSICalibrationValue = 0;
-  RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_6;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_MSI;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 1;
-  RCC_OscInitStruct.PLL.PLLN = 60;
+  RCC_OscInitStruct.PLL.PLLN = 15;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
   RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
@@ -285,65 +366,6 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-}
-
-/**
-  * @brief ADC1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_ADC1_Init(void)
-{
-
-  /* USER CODE BEGIN ADC1_Init 0 */
-
-  /* USER CODE END ADC1_Init 0 */
-
-  ADC_ChannelConfTypeDef sConfig = {0};
-
-  /* USER CODE BEGIN ADC1_Init 1 */
-
-  /* USER CODE END ADC1_Init 1 */
-
-  /** Common config
-  */
-  hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV2;
-  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
-  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
-  hadc1.Init.LowPowerAutoWait = DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
-  hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
-  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
-  hadc1.Init.OversamplingMode = DISABLE;
-  hadc1.Init.DFSDMConfig = ADC_DFSDM_MODE_ENABLE;
-  if (HAL_ADC_Init(&hadc1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Regular Channel
-  */
-  sConfig.Channel = ADC_CHANNEL_9;
-  sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_640CYCLES_5;
-  sConfig.SingleDiff = ADC_SINGLE_ENDED;
-  sConfig.OffsetNumber = ADC_OFFSET_NONE;
-  sConfig.Offset = 0;
-  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN ADC1_Init 2 */
-
-  /* USER CODE END ADC1_Init 2 */
-
 }
 
 /**
@@ -419,6 +441,51 @@ static void MX_SDMMC1_SD_Init(void)
   /* USER CODE BEGIN SDMMC1_Init 2 */
 
   /* USER CODE END SDMMC1_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 120-1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 1000-1;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
 
 }
 
@@ -527,12 +594,16 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOG_CLK_ENABLE();
   HAL_PWREx_EnableVddIO2();
   __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(DHT_GPIO_Port, DHT_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : DHT_Pin */
   GPIO_InitStruct.Pin = DHT_Pin;
@@ -553,6 +624,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LD3_Pin */
+  GPIO_InitStruct.Pin = LD3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(LD3_GPIO_Port, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
